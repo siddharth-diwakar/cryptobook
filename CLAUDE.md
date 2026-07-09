@@ -67,8 +67,8 @@ docs/          # SPEC, ARCHITECTURE, MODEL, ROADMAP — read these first
 
 ## Current status
 - [x] Phase 0 — repo scaffold, CI, logging
-- [ ] Phase 1 — L2 book reconstruction from WS deltas
-- [ ] Phase 2 — gap detection, snapshot resync, book checksum vs REST
+- [x] Phase 1 — L2 book reconstruction from WS deltas
+- [~] Phase 2 — gap detection, snapshot resync, book checksum vs REST (code complete + live smoke-tested; 24h acceptance run pending)
 - [ ] Phase 3 — event log + replay harness
 - [ ] Phase 4 — Avellaneda-Stoikov quoting (paper, no orders yet)
 - [ ] Phase 5 — testnet order placement, fills, inventory tracking

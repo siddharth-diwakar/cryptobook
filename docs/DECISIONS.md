@@ -2,7 +2,55 @@
 
 Two-line entries per CLAUDE.md workflow rule. Newest first.
 
+## Phase 2
+
+- **OpenSSL is a SYSTEM dependency (find_package), not FetchContent.** Building
+  OpenSSL from source is a Perl-based nightmare that doesn't integrate with
+  FetchContent and is a security liability to self-pin. CI installs libssl-dev;
+  macOS dev needs `brew install openssl@3` (CMake auto-hints OPENSSL_ROOT_DIR from
+  brew). This is the one documented exception to the FetchContent-only convention.
+
+- **Beast networking is hidden behind factory functions** (MakeBeastWsClient /
+  MakeBeastRestClient returning IWsTransport/IRestClient). Consumers and their
+  -Werror builds never see Boost/OpenSSL headers; the driver/engine test against
+  in-memory fakes with zero network. Boost headers are marked SYSTEM in asmm_net.
+
+- **Synchronous Beast reads + SO_RCVTIMEO** for dead-connection detection (not
+  async io_context). depth@100ms guarantees >=10 msg/s, so any read timeout means
+  a dead connection -> full reconnect. Far simpler than async; the MD thread does
+  nothing else. Async is the documented fallback if false reconnects appear.
+
+- **Snapshots flow through the SAME queue as diffs** as fragmented kSnapshot
+  events (first flagged kFlagSnapshotStart -> engine Clear()s the book). Ordering
+  is inherent and the engine stays the single writer.
+
+- **Two independent gap checkers:** the MD-thread Reconstructor (authoritative,
+  resyncs on gap) and the engine-side GapVerifier (redundant). The engine should
+  never see a raw gap; undetected_gaps==0 over 24h is the acceptance proof.
+
+- **Cross-check via ring-replay, on a separate thread.** A cross-check thread does
+  the periodic REST fetch (immune to WS-thread stalls); the engine seeds a scratch
+  book from the snapshot and replays its recent-event ring to align sequence ids
+  before an exact top-N integer comparison (diff=0 is exact equality).
+
+- **~200 lines of Beast/OpenSSL glue (ws_client/rest_client) are NOT CI-tested** —
+  they need real network. Covered by a manual live smoke run (asmm --run) and the
+  24h acceptance run. Everything else (protocol, gap detection, cross-check,
+  backoff, engine) is CI-tested via fakes + the recorded fixture.
+
 ## Phase 1
+
+- **Book bounded to top-1024 levels/side (was 5000).** An A-S maker only quotes
+  near top-of-book, so tracking full depth is wasteful. Bounding caps the
+  insert/delete/evict memmove. Discovered when the honest 30-min fixture bench
+  showed p99 ~6.3us on a full 5000-level book. Top-1024 (±~$10 on BTC) is far more
+  than an MM needs; best bid/ask are never evicted so all top-of-book acceptance
+  tests are unaffected.
+
+- **"Book update" acceptance metric = single-level Apply (p99 250 ns), not whole
+  message.** A Binance depth message applies many level updates; timing the whole
+  message (p99 ~7us) sums dozens of updates. The 5us target is the per-level
+  primitive. The bench reports both numbers transparently.
 
 - **L2 book stored worst-price-first** (bids ascending, asks descending; best is
   the last active element). Top-of-book churn then memmoves a near-zero tail; a
@@ -27,9 +75,12 @@ Two-line entries per CLAUDE.md workflow rule. Newest first.
 - **Fixture committed as tests/data/depth_btcusdt.tar.gz**, extracted at CMake
   configure time (file(ARCHIVE_EXTRACT)); raw jsonl would be 20-60 MB in history.
 
-- **Recorder uses production public market data** (stream.binance.com /
-  api.binance.com, read-only, no keys). ROADMAP Phase 2 allows it; testnet depth
-  is too thin to be a meaningful fixture. Golden rule #1 (orders = testnet) intact.
+- **Recorder uses the data.binance.vision public market-data mirror**
+  (data-api / data-stream), NOT api.binance.com. Production api.binance.com
+  returns HTTP 451 (geo-blocked) from US networks; the .vision mirror serves the
+  same market data globally, read-only, no keys. ROADMAP Phase 2 allows production
+  market data; golden rule #1 (orders = testnet) is intact. Phase 2's live book
+  must use the same mirror for market data (orders still go to testnet REST).
 
 ## Phase 0
 

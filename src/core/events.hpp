@@ -20,6 +20,8 @@ inline constexpr u8 kMaxLevelsPerEvent = 64;
 
 // Flag bits.
 inline constexpr u8 kFlagContinuation = 0x01;  // more fragments of the same U/u follow
+inline constexpr u8 kFlagSnapshotStart =
+    0x02;  // first fragment of a snapshot: Clear() the book first
 
 // Fixed-size POD carried through the SPSC queue. Bids occupy levels[0, num_bids);
 // asks occupy levels[num_bids, num_bids + num_asks). All integer ticks/lots.

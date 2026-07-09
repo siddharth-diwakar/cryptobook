@@ -82,6 +82,13 @@ void L2Book::ApplyEvent(const MarketEvent& ev) {
   last_update_ts_ns_ = ev.ts_recv_ns;
 }
 
+void L2Book::Clear() {
+  num_bids_ = 0;
+  num_asks_ = 0;
+  last_update_id_ = 0;
+  last_update_ts_ns_ = 0;
+}
+
 std::optional<Level> L2Book::BestBid() const {
   if (num_bids_ == 0) return std::nullopt;
   return bids_[num_bids_ - 1];

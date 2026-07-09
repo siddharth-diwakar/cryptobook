@@ -2,7 +2,27 @@
 
 #include <string>
 
+#include "core/types.hpp"
+
 namespace asmm {
+
+// [market_data] — live book / resync parameters (Phase 2).
+struct MarketDataConfig {
+  std::string snapshot_rest_url =
+      "https://data-api.binance.vision";  // public mirror, NEVER api.binance.com
+  std::string depth_stream = "depth@100ms";
+  int depth_snapshot_limit = 5000;
+  int px_scale = 2;   // BTCUSDT tickSize 0.01
+  int qty_scale = 5;  // stepSize 0.00001
+  i64 stale_threshold_ms = 500;
+  i64 backoff_initial_ms = 500;
+  i64 backoff_max_ms = 30000;
+  double backoff_multiplier = 2.0;
+  int read_timeout_s = 10;
+  int crosscheck_interval_s = 60;
+  int crosscheck_depth_limit = 100;
+  int crosscheck_levels = 20;
+};
 
 // Runtime configuration loaded at startup from a TOML file plus a .env file.
 // Startup-only state; it never appears on the hot path.
@@ -14,6 +34,9 @@ struct AppConfig {
 
   // [engine]
   std::string log_dir = "logs";
+
+  // [market_data]
+  MarketDataConfig market_data;
 
   // Secrets from .env (never logged). Empty until Phase 5 needs them.
   std::string api_key;

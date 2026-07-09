@@ -7,12 +7,28 @@
 symbol = "BTCUSDT"
 # Order/account REST endpoint — TESTNET ONLY.
 rest_url = "https://testnet.binance.vision"
-# Market-data WS — public production stream is allowed (read-only). Wired for
-# real in Phase 2; only ORDERS must be testnet.
-ws_market_url = "wss://stream.binance.com:9443/ws"
+# Market-data WS — public data.binance.vision mirror (read-only, not geo-blocked;
+# production stream.binance.com is HTTP 451 from US networks). Only ORDERS are
+# testnet-only.
+ws_market_url = "wss://data-stream.binance.vision/ws"
 
 [engine]
 log_dir = "logs"
+
+[market_data]
+snapshot_rest_url = "https://data-api.binance.vision"  # public mirror; NEVER api.binance.com (HTTP 451)
+depth_stream = "depth@100ms"
+depth_snapshot_limit = 5000
+px_scale = 2   # BTCUSDT tickSize 0.01 (startup-verified via exchangeInfo in Phase 5)
+qty_scale = 5  # stepSize 0.00001
+stale_threshold_ms = 500
+backoff_initial_ms = 500
+backoff_max_ms = 30000
+backoff_multiplier = 2.0
+read_timeout_s = 10
+crosscheck_interval_s = 60
+crosscheck_depth_limit = 100
+crosscheck_levels = 20
 
 # Strategy parameters (gamma, kappa, tau, sigma window, hysteresis) arrive in
 # Phase 4 per docs/MODEL.md. Placeholder section for now.

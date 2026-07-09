@@ -11,6 +11,11 @@ _deps/
 logs/
 *.bin
 
+# Recorded fixture: commit only the compressed tarball (CMake extracts it).
+tests/data/depth_btcusdt.jsonl
+tests/data/depth_btcusdt.snapshot.json
+tests/data/depth_btcusdt.meta.json
+
 # Python (analysis/)
 __pycache__/
 *.pyc

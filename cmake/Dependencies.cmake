@@ -38,3 +38,17 @@ FetchContent_MakeAvailable(spdlog Catch2 simdjson tomlplusplus Boost)
 
 # Expose Catch2's CMake helpers (catch_discover_tests).
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+
+# --- System OpenSSL (TLS for wss:// and https://). NOT FetchContent — building
+# OpenSSL from source is a Perl-based nightmare; system OpenSSL is the standard
+# exception (see docs/DECISIONS.md). On macOS, Homebrew isn't on CMake's default
+# search path, so hint OPENSSL_ROOT_DIR from brew.
+if(APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
+  execute_process(COMMAND brew --prefix openssl@3
+    OUTPUT_VARIABLE _brew_openssl OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  if(_brew_openssl)
+    set(OPENSSL_ROOT_DIR "${_brew_openssl}")
+  endif()
+endif()
+find_package(OpenSSL REQUIRED)
+find_package(Threads REQUIRED)

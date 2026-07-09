@@ -38,4 +38,13 @@ TEST_CASE("config: testnet.toml parses and is testnet-only", "[config]") {
   REQUIRE(cfg.symbol == "BTCUSDT");
   // Golden rule #1: the order endpoint must be testnet.
   REQUIRE(cfg.rest_url.find("testnet") != std::string::npos);
+
+  // [market_data] parses with expected values and uses the public mirror.
+  REQUIRE(cfg.market_data.px_scale == 2);
+  REQUIRE(cfg.market_data.qty_scale == 5);
+  REQUIRE(cfg.market_data.stale_threshold_ms == 500);
+  REQUIRE(cfg.market_data.snapshot_rest_url.find("data-api.binance.vision") != std::string::npos);
+  REQUIRE(cfg.market_data.snapshot_rest_url.find("api.binance.com") == std::string::npos);
+  // Market-data WS must also be the mirror, not the geo-blocked production host.
+  REQUIRE(cfg.ws_market_url.find("data-stream.binance.vision") != std::string::npos);
 }

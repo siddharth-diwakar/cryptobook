@@ -11,13 +11,42 @@ add_library(asmm_core STATIC
 target_include_directories(asmm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(asmm_core PRIVATE asmm_warnings)
 
-# --- asmm_exchange: Binance wire-format parsing (exchange boundary).
+# --- asmm_exchange: Binance wire-format parsing + reconstruction protocol.
 add_library(asmm_exchange STATIC
-  exchange/binance_depth.cpp)
+  exchange/binance_depth.cpp
+  exchange/reconstructor.cpp)
 target_include_directories(asmm_exchange PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(asmm_exchange
   PUBLIC asmm_core
   PRIVATE asmm_warnings simdjson::simdjson)
+
+# --- asmm_net: Beast/OpenSSL network transports (WSS + HTTPS). Isolated so that
+# engine/exchange tests never need OpenSSL. Boost headers are marked SYSTEM so
+# their warnings don't trip our -Werror.
+add_library(asmm_net STATIC
+  exchange/ws_client.cpp
+  exchange/rest_client.cpp)
+target_include_directories(asmm_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(asmm_net
+  PUBLIC asmm_core
+  PRIVATE asmm_warnings Boost::beast OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+get_target_property(_beast_inc Boost::beast INTERFACE_INCLUDE_DIRECTORIES)
+if(_beast_inc)
+  target_include_directories(asmm_net SYSTEM PRIVATE ${_beast_inc})
+endif()
+
+# --- asmm_engine: pure engine logic (no direct network I/O; network arrives via
+# transport interfaces). Testable in CI without OpenSSL/Beast.
+add_library(asmm_engine STATIC
+  engine/gap_verifier.cpp
+  engine/backoff.cpp
+  engine/crosscheck.cpp
+  engine/market_data_thread.cpp
+  engine/engine.cpp)
+target_include_directories(asmm_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(asmm_engine
+  PUBLIC asmm_core asmm_exchange
+  PRIVATE asmm_warnings spdlog::spdlog)
 
 # --- asmm: the application binary.
 add_executable(asmm
@@ -29,5 +58,7 @@ target_include_directories(asmm PRIVATE
 target_link_libraries(asmm PRIVATE
   asmm_warnings
   asmm_core
+  asmm_engine
+  asmm_net
   spdlog::spdlog
   tomlplusplus::tomlplusplus)

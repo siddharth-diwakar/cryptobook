@@ -23,7 +23,12 @@ struct Level {
 // ~80 KB tail on every top insert (~3-8 us), blowing the p99 < 5 us target.
 class L2Book {
  public:
-  static constexpr std::size_t kMaxLevels = 5000;
+  // Bounded depth: an A-S market maker only quotes near top-of-book, so we keep
+  // the best kMaxLevels per side (worse levels are evicted). This caps the
+  // insert/delete/evict memmove — a full 5000-level book blew the p99<5us target
+  // (~6.3us) because deep updates memmove up to 80 KB; top-1024 (±~$10 on BTC)
+  // bounds it to ~16 KB. See docs/DECISIONS.md.
+  static constexpr std::size_t kMaxLevels = 1024;
 
   // Apply one level update for one side. qty_lots == 0 deletes the level.
   ApplyResult Apply(Side side, i64 px_ticks, i64 qty_lots);
@@ -31,6 +36,9 @@ class L2Book {
   // Apply every level carried by an event (bids then asks) and advance the
   // last-update bookkeeping.
   void ApplyEvent(const MarketEvent& ev);
+
+  // Reset to empty. Used on resync before rebuilding from a fresh snapshot.
+  void Clear();
 
   std::optional<Level> BestBid() const;
   std::optional<Level> BestAsk() const;

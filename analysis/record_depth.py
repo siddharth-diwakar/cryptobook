@@ -32,8 +32,11 @@ import requests
 import websockets
 
 SYMBOL = "BTCUSDT"
-WS_URL = "wss://stream.binance.com:9443/ws/btcusdt@depth@100ms"
-REST = "https://api.binance.com"
+# Public market-data mirror (data.binance.vision). Not geo-restricted (production
+# api.binance.com returns HTTP 451 from US networks), read-only, no keys — well
+# within golden rule #1, which concerns ORDERS only.
+WS_URL = "wss://data-stream.binance.vision/ws/btcusdt@depth@100ms"
+REST = "https://data-api.binance.vision"
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "tests", "data")
 
 

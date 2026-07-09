@@ -79,6 +79,33 @@ AppConfig LoadConfig(const std::string& toml_path, const std::string& env_path) 
                              "': rest_url must be a testnet endpoint (got '" + cfg.rest_url + "')");
   }
 
+  // [market_data] — all fields optional (defaults in MarketDataConfig).
+  MarketDataConfig& md = cfg.market_data;
+  const auto mdt = tbl["market_data"];
+  md.snapshot_rest_url = mdt["snapshot_rest_url"].value_or(md.snapshot_rest_url);
+  md.depth_stream = mdt["depth_stream"].value_or(md.depth_stream);
+  md.depth_snapshot_limit = mdt["depth_snapshot_limit"].value_or(md.depth_snapshot_limit);
+  md.px_scale = mdt["px_scale"].value_or(md.px_scale);
+  md.qty_scale = mdt["qty_scale"].value_or(md.qty_scale);
+  md.stale_threshold_ms = mdt["stale_threshold_ms"].value_or(md.stale_threshold_ms);
+  md.backoff_initial_ms = mdt["backoff_initial_ms"].value_or(md.backoff_initial_ms);
+  md.backoff_max_ms = mdt["backoff_max_ms"].value_or(md.backoff_max_ms);
+  md.backoff_multiplier = mdt["backoff_multiplier"].value_or(md.backoff_multiplier);
+  md.read_timeout_s = mdt["read_timeout_s"].value_or(md.read_timeout_s);
+  md.crosscheck_interval_s = mdt["crosscheck_interval_s"].value_or(md.crosscheck_interval_s);
+  md.crosscheck_depth_limit = mdt["crosscheck_depth_limit"].value_or(md.crosscheck_depth_limit);
+  md.crosscheck_levels = mdt["crosscheck_levels"].value_or(md.crosscheck_levels);
+
+  // Market data must use the public mirror, never the geo-blocked production host.
+  if (md.snapshot_rest_url.find("api.binance.com") != std::string::npos) {
+    throw std::runtime_error("config '" + toml_path +
+                             "': market_data.snapshot_rest_url must be the data.binance.vision "
+                             "mirror, not api.binance.com (HTTP 451 from US networks)");
+  }
+  if (md.px_scale < 0 || md.qty_scale < 0) {
+    throw std::runtime_error("config '" + toml_path + "': market_data px/qty scale must be >= 0");
+  }
+
   if (!LoadDotenv(env_path)) {
     spdlog::warn(".env file '{}' not found; API keys unset (fine until Phase 5)", env_path);
   }

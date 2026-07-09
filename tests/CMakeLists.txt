@@ -4,6 +4,11 @@ add_executable(asmm_tests
   test_book.cpp
   test_binance_depth.cpp
   test_book_replay.cpp
+  test_reconstructor.cpp
+  test_gap_verifier.cpp
+  test_backoff.cpp
+  test_crosscheck.cpp
+  test_market_data_thread.cpp
   ${CMAKE_SOURCE_DIR}/src/engine/config.cpp)
 
 target_include_directories(asmm_tests PRIVATE
@@ -26,7 +31,7 @@ target_compile_definitions(asmm_tests PRIVATE
 
 target_link_libraries(asmm_tests PRIVATE
   asmm_warnings
-  asmm_exchange           # brings asmm_core transitively (PUBLIC)
+  asmm_engine             # brings asmm_exchange + asmm_core transitively (PUBLIC)
   Catch2::Catch2WithMain
   simdjson::simdjson
   spdlog::spdlog

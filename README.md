@@ -42,11 +42,15 @@ and the exact equations implemented: [docs/MODEL.md](docs/MODEL.md).
 
 ## Build & run
 ```bash
+# macOS only: OpenSSL isn't on CMake's default path (auto-hinted from brew if installed)
+#   brew install openssl@3
 cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 ctest --test-dir build --output-on-failure          # unit + replay tests
-./build/asmm --config config/testnet.toml           # live (testnet keys in .env)
-python analysis/report.py logs/events-*.bin         # metrics + plots
+./build/asmm --version                              # version + git sha
+./build/asmm --run --config config/testnet.toml     # live market-data book + resync (Phase 2)
+python analysis/verify_24h.py run.log               # verify a 24h run's acceptance
 ```
+Linux needs `libssl-dev` (CI installs it). Benchmarks: `bench/run_bench.sh`.
 
 ## Repo map
 | Path | What lives there |
