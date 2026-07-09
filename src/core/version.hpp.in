@@ -1,0 +1,10 @@
+#pragma once
+
+// Generated from version.hpp.in by CMake configure_file(). Do not edit by hand.
+namespace asmm {
+
+inline constexpr const char* kVersion = "@PROJECT_VERSION@";
+inline constexpr const char* kGitSha = "@ASMM_GIT_SHA@";
+inline constexpr const char* kBuildType = "@CMAKE_BUILD_TYPE@";
+
+}  // namespace asmm

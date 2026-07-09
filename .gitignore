@@ -1,0 +1,25 @@
+# Build output
+build/
+build-*/
+cmake-build-*/
+_deps/
+
+# Secrets — NEVER commit (golden rule #1). Use .env.example as the template.
+.env
+
+# Runtime artifacts
+logs/
+*.bin
+
+# Python (analysis/)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor junk
+.DS_Store
+*.swp
+.idea/
+.vscode/
+compile_commands.json

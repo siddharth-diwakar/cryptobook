@@ -1,0 +1,19 @@
+# AS-MM runtime configuration.
+# Golden rule #1: the order/account REST endpoint MUST be testnet. A unit test
+# enforces this (tests/test_sanity.cpp). Market DATA may come from the public
+# production stream (read-only, allowed per ROADMAP Phase 2).
+
+[exchange]
+symbol = "BTCUSDT"
+# Order/account REST endpoint — TESTNET ONLY.
+rest_url = "https://testnet.binance.vision"
+# Market-data WS — public production stream is allowed (read-only). Wired for
+# real in Phase 2; only ORDERS must be testnet.
+ws_market_url = "wss://stream.binance.com:9443/ws"
+
+[engine]
+log_dir = "logs"
+
+# Strategy parameters (gamma, kappa, tau, sigma window, hysteresis) arrive in
+# Phase 4 per docs/MODEL.md. Placeholder section for now.
+[strategy]
