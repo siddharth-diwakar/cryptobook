@@ -36,7 +36,4 @@ jobs:
       - name: Install clang-format
         run: pip install "clang-format==22.1.5"
       - name: clang-format check
-        run: >
-          clang-format --dry-run --Werror
-          src/engine/main.cpp src/engine/config.cpp src/engine/config.hpp
-          tests/test_sanity.cpp
+        run: clang-format --dry-run --Werror $(git ls-files '*.cpp' '*.hpp')

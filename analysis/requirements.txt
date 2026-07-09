@@ -1,0 +1,3 @@
+# Recorder-only deps (analysis/record_depth.py). Off the trading path.
+websockets>=12.0
+requests>=2.31
