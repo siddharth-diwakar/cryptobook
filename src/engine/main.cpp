@@ -6,15 +6,20 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <ctime>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "core/clock.hpp"
 #include "engine/config.hpp"
 #include "engine/engine.hpp"
+#include "engine/event_log.hpp"
 #include "engine/market_data_thread.hpp"
+#include "engine/replay.hpp"
 #include "exchange/rest_client.hpp"
 #include "exchange/ws_client.hpp"
 #include "version.hpp"
@@ -27,8 +32,10 @@ void OnSignal(int) {
 }
 
 void PrintUsage(const char* prog) {
-  spdlog::error("usage: {} [--version | --config <path> | --run --config <path> [--seconds N]]",
-                prog);
+  spdlog::error(
+      "usage: {} [--version | --config <path> | --run --config <path> [--seconds N] [--log] | "
+      "--replay <log.bin>]",
+      prog);
 }
 
 // Strip scheme (wss://, https://) and any path, returning the host.
@@ -61,7 +68,16 @@ asmm::MarketDataParams MakeParams(const asmm::AppConfig& cfg) {
   return p;
 }
 
-int RunLive(const asmm::AppConfig& cfg, int seconds) {
+std::string MakeLogPath(const std::string& log_dir) {
+  std::error_code ec;
+  std::filesystem::create_directories(log_dir, ec);
+  const std::time_t t = std::time(nullptr);
+  char name[64];
+  std::strftime(name, sizeof(name), "events-%Y%m%d-%H%M%S.bin", std::localtime(&t));
+  return log_dir + "/" + name;
+}
+
+int RunLive(const asmm::AppConfig& cfg, int seconds, bool do_log) {
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
 
@@ -71,9 +87,17 @@ int RunLive(const asmm::AppConfig& cfg, int seconds) {
   auto rest = asmm::MakeBeastRestClient(cfg.market_data.read_timeout_s);
   auto cc_rest = asmm::MakeBeastRestClient(cfg.market_data.read_timeout_s);
   const asmm::MarketDataParams params = MakeParams(cfg);
+
+  std::unique_ptr<asmm::EventLogWriter> log;
+  if (do_log) {
+    const std::string path = MakeLogPath(cfg.log_dir);
+    log = std::make_unique<asmm::EventLogWriter>(path);
+    spdlog::info("event log: {}", path);
+  }
+
   asmm::MarketDataThread md(*ws, *rest, params, *queue);
   asmm::Engine engine(*queue, cfg.market_data.stale_threshold_ms, cc_queue.get(),
-                      cfg.market_data.crosscheck_levels);
+                      cfg.market_data.crosscheck_levels, log.get());
 
   const std::string cc_target = "/api/v3/depth?symbol=" + cfg.symbol +
                                 "&limit=" + std::to_string(cfg.market_data.crosscheck_depth_limit);
@@ -127,6 +151,7 @@ int RunLive(const asmm::AppConfig& cfg, int seconds) {
   md_thread.join();
   engine_thread.join();
   cc_thread.join();
+  if (log) log->Close();
   spdlog::info(
       "shutdown: applied={} snapshots={} gaps={} resyncs={} reconnects={} undetected_gaps={} "
       "xcheck_ok={} xcheck_fail={}",
@@ -152,9 +177,29 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  // Parse --config <path> (shared by --config and --run).
+  // Offline replay of a recorded log: --replay <log.bin>
+  if (arg == "--replay") {
+    if (argc < 3) {
+      PrintUsage(argv[0]);
+      return 1;
+    }
+    try {
+      const auto decisions = asmm::ReplayLogFile(argv[2]);
+      const auto& last = decisions.empty() ? asmm::DecisionRecord{} : decisions.back();
+      spdlog::info("replayed {} decisions from {}", decisions.size(), argv[2]);
+      spdlog::info("final: lastId={} bid={} ask={} mid_x2={} bids={} asks={}", last.final_update_id,
+                   last.best_bid_px, last.best_ask_px, last.mid_x2, last.num_bids, last.num_asks);
+      return 0;
+    } catch (const std::exception& e) {
+      spdlog::error("replay error: {}", e.what());
+      return 1;
+    }
+  }
+
+  // Parse flags (shared by --config and --run).
   std::string config_path;
   int seconds = 0;
+  bool do_log = false;
   const bool run_mode = (arg == "--run");
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -162,6 +207,8 @@ int main(int argc, char** argv) {
       config_path = argv[++i];
     else if (a == "--seconds" && i + 1 < argc)
       seconds = std::atoi(argv[++i]);
+    else if (a == "--log")
+      do_log = true;
   }
   if (config_path.empty()) {
     PrintUsage(argv[0]);
@@ -170,7 +217,7 @@ int main(int argc, char** argv) {
 
   try {
     const asmm::AppConfig cfg = asmm::LoadConfig(config_path, ".env");
-    if (run_mode) return RunLive(cfg, seconds);
+    if (run_mode) return RunLive(cfg, seconds, do_log);
     // --config: load-and-report (unchanged Phase 0 behavior).
     spdlog::info("loaded config: symbol={} rest_url={} ws_market_url={} log_dir={}", cfg.symbol,
                  cfg.rest_url, cfg.ws_market_url, cfg.log_dir);

@@ -8,6 +8,8 @@ add_executable(asmm_tests
   test_gap_verifier.cpp
   test_backoff.cpp
   test_crosscheck.cpp
+  test_event_log.cpp
+  test_replay.cpp
   test_market_data_thread.cpp
   ${CMAKE_SOURCE_DIR}/src/engine/config.cpp)
 
@@ -27,7 +29,8 @@ endif()
 
 target_compile_definitions(asmm_tests PRIVATE
   ASMM_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
-  ASMM_DATA_DIR="${ASMM_DATA_DIR}")
+  ASMM_DATA_DIR="${ASMM_DATA_DIR}"
+  ASMM_TMP_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 
 target_link_libraries(asmm_tests PRIVATE
   asmm_warnings

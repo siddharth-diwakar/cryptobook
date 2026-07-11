@@ -2,6 +2,35 @@
 
 Two-line entries per CLAUDE.md workflow rule. Newest first.
 
+## Phase 3
+
+- **DecisionRecord is integer-only (no microprice/doubles).** Floating point is not
+  guaranteed bit-identical across compilers/machines, so the byte-compared decision
+  stream is pure fixed-width integers (px/qty ticks, mid_x2). Microprice (double)
+  is deliberately excluded from the determinism stream. When orders arrive (Phase 5)
+  OrderCommands are integer too, so the stream stays deterministic.
+
+- **Replay is single-threaded and clock-free.** Decisions derive ONLY from book
+  state + recorded input, never NowNs(). ts_recv_ns lives in the recorded input
+  (fixed in the file) but never enters a decision, so replay is wall-clock
+  independent. The live Engine's stale detection (which uses NowNs) is not part of
+  the decision stream.
+
+- **Cross-machine acceptance = committed golden.** A golden decision stream
+  (tests/data/replay_golden.dat) generated on arm64 dev is byte-compared by the CI
+  test on x86_64. Green CI proves two architectures produce identical bytes — the
+  "different machine" acceptance, in CI forever. (All targets are little-endian.)
+
+- **Log record framing: 8-byte header (u32 type + u32 len) + raw POD payload**, with
+  a file header (magic "ASML" + version + struct sizes) the reader validates to
+  reject incompatible builds. Raw-POD writes are safe: fixed-layout, static_assert'd
+  sizeof, little-endian only.
+
+- **Log captures both inputs (MarketEvent) and decisions (DecisionRecord).** Replay
+  only needs the inputs (decisions are reproducible), but logging both lets a run be
+  audited live-vs-replay. Writer is buffered (1 MiB) + flushed every 5s; the hot
+  path does memcpy-into-buffer only.
+
 ## Phase 2
 
 - **OpenSSL is a SYSTEM dependency (find_package), not FetchContent.** Building

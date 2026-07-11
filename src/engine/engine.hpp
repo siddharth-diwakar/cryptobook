@@ -6,6 +6,7 @@
 #include "core/book.hpp"
 #include "core/types.hpp"
 #include "engine/crosscheck.hpp"
+#include "engine/event_log.hpp"
 #include "engine/gap_verifier.hpp"
 #include "engine/market_data_thread.hpp"
 
@@ -26,7 +27,7 @@ struct EngineCounters {
 class Engine {
  public:
   Engine(MarketQueue& in, i64 stale_threshold_ms, CrossCheckQueue* cc_in = nullptr,
-         int crosscheck_levels = 20);
+         int crosscheck_levels = 20, EventLogWriter* log = nullptr);
 
   void Run(std::atomic<bool>& stop);
 
@@ -43,6 +44,8 @@ class Engine {
   MarketQueue& in_;
   CrossCheckQueue* cc_in_;
   int crosscheck_levels_;
+  EventLogWriter* log_;
+  i64 last_flush_ns_{0};
   L2Book book_;
   L2Book scratch_;  // reused by cross-check; avoids per-call allocation
   GapVerifier verifier_;

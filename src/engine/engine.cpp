@@ -7,19 +7,22 @@
 #include <thread>
 
 #include "core/clock.hpp"
+#include "engine/replay.hpp"
 
 namespace asmm {
 
 namespace {
-constexpr std::size_t kRingCap = 1024;  // trim threshold
-constexpr std::size_t kRingKeep = 512;  // events kept after a trim
+constexpr std::size_t kRingCap = 1024;      // trim threshold
+constexpr std::size_t kRingKeep = 512;      // events kept after a trim
+constexpr i64 kLogFlushNs = 5'000'000'000;  // 5s
 }  // namespace
 
 Engine::Engine(MarketQueue& in, i64 stale_threshold_ms, CrossCheckQueue* cc_in,
-               int crosscheck_levels)
+               int crosscheck_levels, EventLogWriter* log)
     : in_(in),
       cc_in_(cc_in),
       crosscheck_levels_(crosscheck_levels),
+      log_(log),
       stale_threshold_ns_(stale_threshold_ms * 1'000'000) {
   ring_.reserve(kRingCap);
 }
@@ -36,7 +39,7 @@ bool Engine::Drain() {
   bool did_work = false;
   while (in_.try_pop(ev)) {
     did_work = true;
-    verifier_.Check(ev);  // redundant gap detection (should never fire)
+    const bool ok = verifier_.Check(ev);  // redundant gap detection (should never fire)
 
     if (ev.flags & kFlagSnapshotStart) {
       book_.Clear();
@@ -48,6 +51,12 @@ bool Engine::Drain() {
     RecordRing(ev);
     ++counters_.events_applied;
     if (ev.kind == EventKind::kDepthDiff) book_live_ = true;
+
+    // Append input + derived decision to the replayable log (buffered).
+    if (log_) {
+      log_->WriteMarketEvent(ev);
+      log_->WriteDecision(MakeDecision(book_, ev.final_update_id, book_live_, !ok));
+    }
   }
   return did_work;
 }
@@ -94,9 +103,18 @@ void Engine::Run(std::atomic<bool>& stop) {
       }
     }
 
+    if (log_) {
+      const i64 now = NowNs();
+      if (now - last_flush_ns_ > kLogFlushNs) {
+        log_->Flush();
+        last_flush_ns_ = now;
+      }
+    }
+
     if (!did_work) std::this_thread::sleep_for(std::chrono::microseconds(200));
   }
-  Drain();  // final flush
+  Drain();  // final drain
+  if (log_) log_->Flush();
 }
 
 }  // namespace asmm

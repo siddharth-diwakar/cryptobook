@@ -41,6 +41,8 @@ add_library(asmm_engine STATIC
   engine/gap_verifier.cpp
   engine/backoff.cpp
   engine/crosscheck.cpp
+  engine/event_log.cpp
+  engine/replay.cpp
   engine/market_data_thread.cpp
   engine/engine.cpp)
 target_include_directories(asmm_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
