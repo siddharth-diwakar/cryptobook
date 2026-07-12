@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "core/book.hpp"
+#include "core/events.hpp"
 #include "core/types.hpp"
 #include "strategy/records.hpp"
 
@@ -33,6 +34,12 @@ class PaperBook {
   // our ask fills when best bid >= our ask (sell). Partial fills capped at the
   // displayed opposite-side qty. Appends FillRecords; returns the count.
   int SimulateFills(const L2Book& book, u64 final_update_id, std::vector<FillRecord>& out);
+
+  // Apply a REAL exchange fill (live mode) using the executionReport's incremental
+  // last-filled qty/price ("l"/"L"). Commission is applied in its own asset: quote
+  // reduces cash, base reduces inventory, other (e.g. BNB) is left out of BTC PnL.
+  // Non-fill reports (l == 0) are ignored.
+  void ApplyRealFill(const ExecEvent& e);
 
   i64 inventory() const { return q_lots_; }
   i64 cash_units() const { return cash_units_; }

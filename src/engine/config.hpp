@@ -25,6 +25,23 @@ struct MarketDataConfig {
   int crosscheck_levels = 20;
 };
 
+// [orders] — Phase 5 live testnet order path. Disabled by default: paper mode
+// stays the default and a live run explicitly flips `enabled`. The user-data WS
+// host and the order rest_url are both allowlisted to testnet (golden rule #1).
+struct OrderConfig {
+  bool enabled = false;                   // false = paper only (no orders sent)
+  int recv_window_ms = 5000;              // signed-request recvWindow (<= 60000)
+  int max_order_rate_per_10s = 40;        // order-count token bucket
+  int max_request_weight_per_min = 1000;  // request-weight token bucket
+  std::string user_data_ws_url = "wss://testnet.binance.vision/ws";  // TESTNET ONLY
+  int reconcile_interval_s = 60;  // periodic GET openOrders/account reconcile
+  bool flatten_on_kill = false;   // kill switch cancels-all; no market flatten
+  i64 order_backoff_initial_ms = 500;
+  i64 order_backoff_max_ms = 30000;
+  std::string client_id_prefix = "asmm";  // newClientOrderId = "<prefix>-<seq>"
+  int cancel_all_on_kill_timeout_ms = 3000;
+};
+
 // Runtime configuration loaded at startup from a TOML file plus a .env file.
 // Startup-only state; it never appears on the hot path.
 struct AppConfig {
@@ -42,6 +59,9 @@ struct AppConfig {
   // [strategy]
   bool strategy_enabled = false;
   StrategyParams strategy;
+
+  // [orders]
+  OrderConfig orders;
 
   // Secrets from .env (never logged). Empty until Phase 5 needs them.
   std::string api_key;

@@ -11,6 +11,16 @@ add_library(asmm_core STATIC
 target_include_directories(asmm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(asmm_core PRIVATE asmm_warnings)
 
+# --- asmm_auth: HMAC request signing + testnet host allowlist + scaled<->decimal.
+# Pure helpers for the order path. Links ONLY OpenSSL::Crypto (libcrypto, no TLS,
+# no Beast), so it stays CI-testable without a network.
+add_library(asmm_auth STATIC
+  exchange/signing.cpp)
+target_include_directories(asmm_auth PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(asmm_auth
+  PUBLIC asmm_core
+  PRIVATE asmm_warnings OpenSSL::Crypto)
+
 # --- asmm_exchange: Binance wire-format parsing + reconstruction protocol.
 add_library(asmm_exchange STATIC
   exchange/binance_depth.cpp
@@ -25,11 +35,12 @@ target_link_libraries(asmm_exchange
 # their warnings don't trip our -Werror.
 add_library(asmm_net STATIC
   exchange/ws_client.cpp
-  exchange/rest_client.cpp)
+  exchange/rest_client.cpp
+  exchange/signed_rest_client.cpp)
 target_include_directories(asmm_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(asmm_net
   PUBLIC asmm_core
-  PRIVATE asmm_warnings Boost::beast OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+  PRIVATE asmm_warnings asmm_auth Boost::beast OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 get_target_property(_beast_inc Boost::beast INTERFACE_INCLUDE_DIRECTORIES)
 if(_beast_inc)
   target_include_directories(asmm_net SYSTEM PRIVATE ${_beast_inc})
@@ -53,11 +64,13 @@ add_library(asmm_engine STATIC
   engine/crosscheck.cpp
   engine/event_log.cpp
   engine/replay.cpp
+  engine/token_bucket.cpp
+  engine/oms.cpp
   engine/market_data_thread.cpp
   engine/engine.cpp)
 target_include_directories(asmm_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(asmm_engine
-  PUBLIC asmm_core asmm_exchange asmm_strategy
+  PUBLIC asmm_core asmm_exchange asmm_strategy asmm_auth
   PRIVATE asmm_warnings spdlog::spdlog)
 
 # --- asmm: the application binary.
@@ -70,6 +83,7 @@ target_include_directories(asmm PRIVATE
 target_link_libraries(asmm PRIVATE
   asmm_warnings
   asmm_core
+  asmm_auth
   asmm_engine
   asmm_net
   spdlog::spdlog

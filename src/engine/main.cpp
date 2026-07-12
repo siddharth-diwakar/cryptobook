@@ -6,6 +6,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <exception>
 #include <filesystem>
@@ -23,6 +24,8 @@
 #include "engine/market_data_thread.hpp"
 #include "engine/replay.hpp"
 #include "exchange/rest_client.hpp"
+#include "exchange/signed_rest_client.hpp"
+#include "exchange/signing.hpp"
 #include "exchange/ws_client.hpp"
 #include "strategy/strategy.hpp"
 #include "version.hpp"
@@ -37,7 +40,7 @@ void OnSignal(int) {
 void PrintUsage(const char* prog) {
   spdlog::error(
       "usage: {} [--version | --config <path> | --run --config <path> [--seconds N] [--log] | "
-      "--replay <log.bin>]",
+      "--smoke --config <path> | --replay <log.bin>]",
       prog);
 }
 
@@ -78,6 +81,140 @@ std::string MakeLogPath(const std::string& log_dir) {
   char name[64];
   std::strftime(name, sizeof(name), "events-%Y%m%d-%H%M%S.bin", std::localtime(&t));
   return log_dir + "/" + name;
+}
+
+// --- Lightweight JSON field extractors for the smoke tool only (not the hot
+// path, not replay). A fail-fast probe doesn't warrant a full simdjson parse.
+std::string FindJsonStr(const std::string& body, const std::string& key) {
+  const std::string pat = "\"" + key + "\":\"";
+  const auto p = body.find(pat);
+  if (p == std::string::npos) return "";
+  const auto start = p + pat.size();
+  const auto end = body.find('"', start);
+  if (end == std::string::npos) return "";
+  return body.substr(start, end - start);
+}
+
+asmm::i64 FindJsonInt(const std::string& body, const std::string& key) {
+  const std::string pat = "\"" + key + "\":";
+  const auto p = body.find(pat);
+  if (p == std::string::npos) return -1;
+  auto start = p + pat.size();
+  while (start < body.size() && (body[start] == ' ')) ++start;
+  asmm::i64 v = 0;
+  bool any = false;
+  while (start < body.size() && body[start] >= '0' && body[start] <= '9') {
+    v = v * 10 + (body[start] - '0');
+    any = true;
+    ++start;
+  }
+  return any ? v : -1;
+}
+
+// Number of fractional digits down to the significant '1' of a power-of-ten tick
+// like "0.01000000" (-> 2) or "0.00001000" (-> 5). Robust to trailing zeros.
+int FractionalScale(const std::string& tick) {
+  const auto dot = tick.find('.');
+  if (dot == std::string::npos) return 0;
+  int scale = 0;
+  for (std::size_t i = dot + 1; i < tick.size(); ++i) {
+    if (tick[i] != '0') scale = static_cast<int>(i - dot);
+  }
+  return scale;
+}
+
+// Phase 5 fail-fast: prove testnet reachability, key/signature validity, symbol
+// filters, and the user-data listenKey lifecycle BEFORE building the live engine.
+// Network-only (CI-exempt). Returns 0 iff every check passes.
+int RunSmoke(const asmm::AppConfig& cfg) {
+  if (cfg.api_key.empty() || cfg.api_secret.empty()) {
+    spdlog::error("smoke: BINANCE_TESTNET_API_KEY / _SECRET not set (populate .env). Aborting.");
+    return 1;
+  }
+  const std::string host = HostOf(cfg.rest_url);
+  if (!asmm::IsTestnetOrderHost(host)) {  // defense in depth; config already checked
+    spdlog::error("smoke: rest_url host '{}' is not a testnet order host", host);
+    return 1;
+  }
+  auto rest = asmm::MakeBeastSignedRestClient(
+      cfg.api_key, cfg.api_secret, cfg.orders.recv_window_ms, cfg.market_data.read_timeout_s);
+  spdlog::info("smoke: host={} recvWindow={}ms", host, cfg.orders.recv_window_ms);
+
+  // (1) GET /api/v3/time -> reachability + clock offset.
+  const auto local_before = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::system_clock::now().time_since_epoch())
+                                .count();
+  const asmm::HttpResult t = rest->Request(asmm::HttpMethod::kGet, host, "/api/v3/time", "", false);
+  if (!t.ok()) {
+    spdlog::error("smoke: GET /time failed (status={} err='{}'). Testnet unreachable from here?",
+                  t.status, t.err);
+    return 1;
+  }
+  const asmm::i64 server_ms = FindJsonInt(t.body, "serverTime");
+  const asmm::i64 offset = server_ms - local_before;
+  spdlog::info("smoke: [1/4] /time ok serverTime={} local~{} offset={}ms", server_ms, local_before,
+               offset);
+  if (server_ms < 0) {
+    spdlog::error("smoke: could not parse serverTime from '{}'", t.body);
+    return 1;
+  }
+  if (std::llabs(offset) > cfg.orders.recv_window_ms / 2) {
+    spdlog::error("smoke: clock skew {}ms exceeds recvWindow/2 ({}ms). NTP-sync the box.", offset,
+                  cfg.orders.recv_window_ms / 2);
+    return 1;
+  }
+  rest->SetTimeOffsetMs(offset);
+
+  // (2) GET /api/v3/exchangeInfo -> verify tickSize/stepSize match our scales.
+  const asmm::HttpResult ei = rest->Request(asmm::HttpMethod::kGet, host, "/api/v3/exchangeInfo",
+                                            "symbol=" + cfg.symbol, false);
+  if (!ei.ok()) {
+    spdlog::error("smoke: GET /exchangeInfo failed (status={} body='{}')", ei.status, ei.body);
+    return 1;
+  }
+  const int tick_scale = FractionalScale(FindJsonStr(ei.body, "tickSize"));
+  const int step_scale = FractionalScale(FindJsonStr(ei.body, "stepSize"));
+  spdlog::info("smoke: [2/4] exchangeInfo tickSize->px_scale={} stepSize->qty_scale={}", tick_scale,
+               step_scale);
+  if (tick_scale != cfg.market_data.px_scale || step_scale != cfg.market_data.qty_scale) {
+    spdlog::error("smoke: filter mismatch! config px_scale={} qty_scale={} but exchange says {}/{}",
+                  cfg.market_data.px_scale, cfg.market_data.qty_scale, tick_scale, step_scale);
+    return 1;
+  }
+
+  // (3) POST /api/v3/order/test (signed) LIMIT_MAKER, far below market so it can
+  //     never cross. Validates key + signature + filters without resting an order.
+  const std::string price = asmm::ScaledToDecimal(10000 * 100, cfg.market_data.px_scale);  // 10000
+  const std::string qty = asmm::ScaledToDecimal(100, cfg.market_data.qty_scale);           // 0.001
+  const std::string order_q =
+      "symbol=" + cfg.symbol + "&side=BUY&type=LIMIT_MAKER&quantity=" + qty + "&price=" + price;
+  const asmm::HttpResult ot =
+      rest->Request(asmm::HttpMethod::kPost, host, "/api/v3/order/test", order_q, true);
+  if (!ot.ok()) {
+    spdlog::error(
+        "smoke: POST /order/test failed (status={} body='{}'). Bad key/signature/filters?",
+        ot.status, ot.body);
+    return 1;
+  }
+  spdlog::info("smoke: [3/4] /order/test ok (signed LIMIT_MAKER {} @ {})", qty, price);
+
+  // (4) User-data listenKey lifecycle: create (key-only, no signature) + delete.
+  const asmm::HttpResult lk =
+      rest->Request(asmm::HttpMethod::kPost, host, "/api/v3/userDataStream", "", false);
+  const std::string listen_key = FindJsonStr(lk.body, "listenKey");
+  if (!lk.ok() || listen_key.empty()) {
+    spdlog::error("smoke: POST /userDataStream failed (status={} body='{}')", lk.status, lk.body);
+    return 1;
+  }
+  const asmm::HttpResult del = rest->Request(
+      asmm::HttpMethod::kDelete, host, "/api/v3/userDataStream", "listenKey=" + listen_key, false);
+  spdlog::info("smoke: [4/4] userDataStream ok listenKey={}... delete_status={}",
+               listen_key.substr(0, 8), del.status);
+
+  spdlog::info(
+      "smoke: ALL GREEN — testnet reachable, keys/signature valid, filters match, "
+      "user-data stream OK. Safe to build Stage B / run live.");
+  return 0;
 }
 
 int RunLive(const asmm::AppConfig& cfg, int seconds, bool do_log) {
@@ -223,6 +360,7 @@ int main(int argc, char** argv) {
   double gamma_override = 0.0;
   const bool run_mode = (arg == "--run");
   const bool replay_mode = (arg == "--replay");
+  const bool smoke_mode = (arg == "--smoke");
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--config" && i + 1 < argc)
@@ -275,6 +413,7 @@ int main(int argc, char** argv) {
   try {
     asmm::AppConfig cfg = asmm::LoadConfig(config_path, ".env");
     if (gamma_override > 0.0) cfg.strategy.gamma = gamma_override;
+    if (smoke_mode) return RunSmoke(cfg);
     if (run_mode) return RunLive(cfg, seconds, do_log);
     // --config: load-and-report (unchanged Phase 0 behavior).
     spdlog::info("loaded config: symbol={} rest_url={} ws_market_url={} log_dir={}", cfg.symbol,

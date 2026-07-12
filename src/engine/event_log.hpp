@@ -30,7 +30,17 @@ struct DecisionRecord {
 static_assert(sizeof(DecisionRecord) == 64);
 static_assert(std::is_trivially_copyable_v<DecisionRecord>);
 
-enum RecordType : u32 { kRecMarketEvent = 1, kRecDecision = 2, kRecQuote = 3, kRecFill = 4 };
+enum RecordType : u32 {
+  kRecMarketEvent = 1,
+  kRecDecision = 2,
+  kRecQuote = 3,
+  kRecFill = 4,
+  // Phase 5. The reader skips unknown types by length, so adding these does NOT
+  // change v2 (the Phase-3 golden and MarketEvent/Decision replay are untouched).
+  kRecOrderCmd = 5,
+  kRecExecEvent = 6,
+  kRecReconcile = 7,
+};
 
 // Per-record framing: 8 bytes, little-endian.
 struct RecordHeader {
@@ -67,6 +77,9 @@ class EventLogWriter {
   void WriteDecision(const DecisionRecord& d);
   void WriteQuote(const QuoteRecord& q);
   void WriteFill(const FillRecord& f);
+  void WriteOrderCommand(const OrderCommand& c);
+  void WriteExecEvent(const ExecEvent& e);
+  void WriteReconcile(const ReconcileReport& r);
   void Flush();  // write buffer to disk + fflush
   void Close();
 
@@ -90,6 +103,11 @@ class EventLogReader {
   // Reads the next record. Returns false at EOF. out_type says which of ev/d was
   // filled. Unknown record types are skipped.
   bool Next(u32& out_type, MarketEvent& ev, DecisionRecord& d);
+
+  // Lower-level: read the next record's type + raw payload bytes into `buf` (in
+  // file order, no type filtering). Returns false at clean EOF. Used by ReplayLive
+  // to dispatch ALL record types deterministically.
+  bool NextRaw(u32& out_type, std::vector<char>& buf);
 
  private:
   std::FILE* f_{nullptr};

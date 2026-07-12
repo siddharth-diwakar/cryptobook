@@ -44,3 +44,19 @@ q_max_lots = 100        # 0.001 BTC soft limit -> quote one side only
 quote_size_lots = 10    # 0.0001 BTC per side
 maker_fee_bps = 10.0    # Binance spot 0.1%
 min_notional_usdt = 5.0
+
+# Live testnet order placement (Phase 5). DISABLED by default: with enabled=false
+# the engine runs paper-only (no orders sent). Flip to true ONLY for a live
+# testnet run with keys in .env. Every endpoint here is testnet-only (golden rule #1).
+[orders]
+enabled = false
+recv_window_ms = 5000                 # signed-request recvWindow (<= 60000)
+max_order_rate_per_10s = 40           # order-count token bucket
+max_request_weight_per_min = 1000     # request-weight token bucket
+user_data_ws_url = "wss://testnet.binance.vision/ws"  # TESTNET ONLY
+reconcile_interval_s = 60             # periodic reconcile vs exchange truth
+flatten_on_kill = false               # kill switch cancels-all only (no market flatten)
+order_backoff_initial_ms = 500
+order_backoff_max_ms = 30000
+client_id_prefix = "asmm"             # newClientOrderId = "asmm-<seq>"
+cancel_all_on_kill_timeout_ms = 3000

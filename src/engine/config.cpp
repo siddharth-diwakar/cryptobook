@@ -8,6 +8,8 @@
 #include <string>
 #include <toml++/toml.hpp>
 
+#include "exchange/signing.hpp"
+
 namespace asmm {
 namespace {
 
@@ -74,9 +76,12 @@ AppConfig LoadConfig(const std::string& toml_path, const std::string& env_path) 
     throw std::runtime_error("config '" + toml_path + "': [exchange].rest_url is required");
   }
   // Golden rule #1: the order/account endpoint must never point at production.
-  if (cfg.rest_url.find("testnet") == std::string::npos) {
+  // Exact host allowlist, not a substring — "testnet.binance.vision.evil.com"
+  // and the like must NOT pass. This is the sole barrier before we ever sign.
+  if (!IsTestnetOrderHost(HostOf(cfg.rest_url))) {
     throw std::runtime_error("config '" + toml_path +
-                             "': rest_url must be a testnet endpoint (got '" + cfg.rest_url + "')");
+                             "': rest_url host must be a Binance testnet order host (got '" +
+                             HostOf(cfg.rest_url) + "' from '" + cfg.rest_url + "')");
   }
 
   // [market_data] — all fields optional (defaults in MarketDataConfig).
@@ -123,6 +128,38 @@ AppConfig LoadConfig(const std::string& toml_path, const std::string& env_path) 
   sp.min_notional_usdt = st["min_notional_usdt"].value_or(sp.min_notional_usdt);
   sp.px_scale = md.px_scale;  // tick/step scales come from [market_data]
   sp.qty_scale = md.qty_scale;
+
+  // [orders] — all optional (defaults in OrderConfig). Disabled by default.
+  const auto ot = tbl["orders"];
+  OrderConfig& oc = cfg.orders;
+  oc.enabled = ot["enabled"].value_or(oc.enabled);
+  oc.recv_window_ms = ot["recv_window_ms"].value_or(oc.recv_window_ms);
+  oc.max_order_rate_per_10s = ot["max_order_rate_per_10s"].value_or(oc.max_order_rate_per_10s);
+  oc.max_request_weight_per_min =
+      ot["max_request_weight_per_min"].value_or(oc.max_request_weight_per_min);
+  oc.user_data_ws_url = ot["user_data_ws_url"].value_or(oc.user_data_ws_url);
+  oc.reconcile_interval_s = ot["reconcile_interval_s"].value_or(oc.reconcile_interval_s);
+  oc.flatten_on_kill = ot["flatten_on_kill"].value_or(oc.flatten_on_kill);
+  oc.order_backoff_initial_ms =
+      ot["order_backoff_initial_ms"].value_or(oc.order_backoff_initial_ms);
+  oc.order_backoff_max_ms = ot["order_backoff_max_ms"].value_or(oc.order_backoff_max_ms);
+  oc.client_id_prefix = ot["client_id_prefix"].value_or(oc.client_id_prefix);
+  oc.cancel_all_on_kill_timeout_ms =
+      ot["cancel_all_on_kill_timeout_ms"].value_or(oc.cancel_all_on_kill_timeout_ms);
+
+  // The user-data stream carries our own account/order updates — it must also be
+  // a testnet host (golden rule #1). Validated even when disabled: fail closed.
+  if (!IsTestnetOrderHost(HostOf(oc.user_data_ws_url))) {
+    throw std::runtime_error(
+        "config '" + toml_path +
+        "': orders.user_data_ws_url host must be a Binance testnet host (got '" +
+        HostOf(oc.user_data_ws_url) + "')");
+  }
+  if (oc.recv_window_ms <= 0 || oc.recv_window_ms > 60000) {
+    throw std::runtime_error("config '" + toml_path +
+                             "': orders.recv_window_ms must be in (0, 60000] (got " +
+                             std::to_string(oc.recv_window_ms) + ")");
+  }
 
   if (!LoadDotenv(env_path)) {
     spdlog::warn(".env file '{}' not found; API keys unset (fine until Phase 5)", env_path);

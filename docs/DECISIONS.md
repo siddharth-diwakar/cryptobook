@@ -2,6 +2,33 @@
 
 Two-line entries per CLAUDE.md workflow rule. Newest first.
 
+## Phase 5 (Stage A — foundations + smoke)
+
+- **Order-endpoint guard is now an exact host allowlist, not `find("testnet")`.**
+  `IsTestnetOrderHost(HostOf(url))` (src/exchange/signing.cpp) accepts only
+  `testnet.binance.vision` (+ `api1..4` alternates). The old substring check would
+  have passed `testnet.binance.vision.evil.com`. Enforced at config load AND again
+  in the signed client before any socket (fail-closed). Golden rule #1's real teeth.
+
+- **`asmm_auth` links ONLY `OpenSSL::Crypto` (libcrypto), never Beast/`OpenSSL::SSL`.**
+  So HMAC signing, the allowlist, and scaled<->decimal are unit-tested in CI without
+  a network. The network-only Beast signed client (asmm_net) stays CI-exempt.
+
+- **HMAC test vector was corrected after cross-checking.** The value first proposed
+  in planning was wrong; the committed vector (`b89008e7…`) matches `openssl dgst`
+  and Python `hmac` for the Binance example key/secret/params. A wrong vector would
+  have masked a real signing bug (every order → -1022).
+
+- **`--smoke` uses lightweight substring JSON extraction, not simdjson.** It's a
+  fail-fast connectivity/keys/filters probe (CI-exempt, off the hot path), so a full
+  parser isn't warranted; keeps simdjson out of the `asmm` binary's main.cpp.
+
+- **Order PODs (`OrderCommand`/`ExecEvent`/`ReconcileReport`) are fixed-size integer
+  types with `static_assert` sizes,** like `MarketEvent` — so they cross SPSC queues
+  and land in the event log byte-identically (Stage B determinism depends on this).
+  Queue aliases live with their owning threads (Stage B), not in events.hpp, matching
+  the existing `MarketQueue` convention.
+
 ## Phase 4
 
 - **Strategy is a pure lib (asmm_strategy) behind a null Engine pointer.** With no

@@ -28,8 +28,16 @@ QuoteRecord MakeQuote(u64 fid, i64 mid_x2, i64 inventory, double sigma_p, i64 bi
 }
 }  // namespace
 
-Strategy::Strategy(const StrategyParams& p)
-    : p_(p), sigma_(p.sigma_halflife_s, p.sigma_min_samples), paper_(p.maker_fee_bps) {}
+Strategy::Strategy(const StrategyParams& p, bool live_mode)
+    : p_(p),
+      live_mode_(live_mode),
+      sigma_(p.sigma_halflife_s, p.sigma_min_samples),
+      paper_(p.maker_fee_bps) {}
+
+void Strategy::OnExec(const ExecEvent& e) {
+  paper_.ApplyRealFill(e);
+  if (e.last_qty_lots > 0) ++fill_count_;
+}
 
 bool Strategy::MinNotionalOk(i64 px_ticks, i64 qty_lots) const {
   const double notional = static_cast<double>(px_ticks) * static_cast<double>(qty_lots) *
@@ -57,9 +65,12 @@ StrategyOutput Strategy::OnEvent(const L2Book& book, const MarketEvent& ev) {
 
   // Fills FIRST: the quotes resting from the previous tick may be crossed by this
   // new book state. (Re-quoting happens after, so a just-placed post-only quote is
-  // never "filled" in the same event.)
-  paper_.SimulateFills(book, ev.final_update_id, out.fills);
-  fill_count_ += out.fills.size();
+  // never "filled" in the same event.) Paper mode only — in live mode real fills
+  // arrive via OnExec from the user-data stream.
+  if (!live_mode_) {
+    paper_.SimulateFills(book, ev.final_update_id, out.fills);
+    fill_count_ += out.fills.size();
+  }
 
   const double sr = sigma_.sigma_r();
   const double sigma_p = mid * sr * std::sqrt(kSecondsPerDay);

@@ -54,6 +54,18 @@ void EventLogWriter::WriteFill(const FillRecord& f) {
   WriteRecord(kRecFill, &f, sizeof(f));
 }
 
+void EventLogWriter::WriteOrderCommand(const OrderCommand& c) {
+  WriteRecord(kRecOrderCmd, &c, sizeof(c));
+}
+
+void EventLogWriter::WriteExecEvent(const ExecEvent& e) {
+  WriteRecord(kRecExecEvent, &e, sizeof(e));
+}
+
+void EventLogWriter::WriteReconcile(const ReconcileReport& r) {
+  WriteRecord(kRecReconcile, &r, sizeof(r));
+}
+
 void EventLogWriter::Flush() {
   if (f_ && !buf_.empty()) {
     std::fwrite(buf_.data(), 1, buf_.size(), f_);
@@ -109,6 +121,17 @@ bool EventLogReader::Next(u32& out_type, MarketEvent& ev, DecisionRecord& d) {
   // Unknown record type: skip its payload and read the next one.
   if (std::fseek(f_, static_cast<long>(hdr.len), SEEK_CUR) != 0) return false;
   return Next(out_type, ev, d);
+}
+
+bool EventLogReader::NextRaw(u32& out_type, std::vector<char>& buf) {
+  RecordHeader hdr{};
+  const std::size_t got = std::fread(&hdr, 1, sizeof(hdr), f_);
+  if (got == 0) return false;  // clean EOF
+  if (got != sizeof(hdr)) return false;
+  out_type = hdr.type;
+  buf.resize(hdr.len);
+  if (hdr.len == 0) return true;
+  return std::fread(buf.data(), 1, hdr.len, f_) == hdr.len;
 }
 
 }  // namespace asmm

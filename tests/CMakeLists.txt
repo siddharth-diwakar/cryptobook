@@ -1,5 +1,11 @@
 add_executable(asmm_tests
   test_sanity.cpp
+  test_events.cpp
+  test_signing.cpp
+  test_signed_rest.cpp
+  test_token_bucket.cpp
+  test_oms.cpp
+  test_real_fills.cpp
   test_spsc_queue.cpp
   test_book.cpp
   test_binance_depth.cpp
@@ -38,6 +44,7 @@ target_compile_definitions(asmm_tests PRIVATE
 
 target_link_libraries(asmm_tests PRIVATE
   asmm_warnings
+  asmm_auth               # HMAC signing + testnet allowlist (links libcrypto, no TLS)
   asmm_engine             # brings asmm_exchange + asmm_core transitively (PUBLIC)
   Catch2::Catch2WithMain
   simdjson::simdjson

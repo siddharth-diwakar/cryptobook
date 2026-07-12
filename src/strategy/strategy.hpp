@@ -22,12 +22,17 @@ struct StrategyOutput {
 // NowNs(). One instance lives on the engine thread (single writer).
 class Strategy {
  public:
-  explicit Strategy(const StrategyParams& p);
+  // live_mode=false (default): paper — simulate fills against our own book.
+  // live_mode=true: real orders — fills arrive via OnExec; SimulateFills is off.
+  explicit Strategy(const StrategyParams& p, bool live_mode = false);
 
   // Update sigma, apply guards, compute/hysteresis-filter quotes, apply inventory
-  // risk limits, and simulate fills. Call once per applied, non-continuation
-  // event when the book is live.
+  // risk limits, and (paper mode only) simulate fills. Call once per applied,
+  // non-continuation event when the book is live.
   StrategyOutput OnEvent(const L2Book& book, const MarketEvent& ev);
+
+  // Live mode: apply a real exchange fill to inventory/cash/PnL.
+  void OnExec(const ExecEvent& e);
 
   // Snapshot resync: pull quotes, restart sigma mid-continuity.
   void OnResync();
@@ -41,6 +46,7 @@ class Strategy {
   bool MinNotionalOk(i64 px_ticks, i64 qty_lots) const;
 
   StrategyParams p_;
+  bool live_mode_;
   SigmaEwma sigma_;
   PaperBook paper_;
   i64 working_bid_{0};

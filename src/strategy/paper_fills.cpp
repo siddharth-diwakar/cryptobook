@@ -66,4 +66,27 @@ int PaperBook::SimulateFills(const L2Book& book, u64 final_update_id,
   return n;
 }
 
+void PaperBook::ApplyRealFill(const ExecEvent& e) {
+  if (e.last_qty_lots <= 0) return;  // ack/cancel/reject carry no fill
+  const i64 qty = e.last_qty_lots;
+  const i64 px = e.last_px_ticks;
+  if (e.side == Side::kBid) {  // buy
+    q_lots_ += qty;
+    cash_units_ -= px * qty;
+  } else {  // sell
+    q_lots_ -= qty;
+    cash_units_ += px * qty;
+  }
+  switch (e.comm_asset) {
+    case CommAsset::kQuote:
+      cash_units_ -= e.fee_units;  // fee already in cash units
+      break;
+    case CommAsset::kBase:
+      q_lots_ -= e.fee_units;  // fee already in lots
+      break;
+    case CommAsset::kOther:
+      break;  // e.g. BNB — paid separately, excluded from BTC/USDT PnL
+  }
+}
+
 }  // namespace asmm
