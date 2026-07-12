@@ -106,6 +106,24 @@ AppConfig LoadConfig(const std::string& toml_path, const std::string& env_path) 
     throw std::runtime_error("config '" + toml_path + "': market_data px/qty scale must be >= 0");
   }
 
+  // [strategy] — all optional (defaults in StrategyParams).
+  const auto st = tbl["strategy"];
+  cfg.strategy_enabled = st["enabled"].value_or(false);
+  StrategyParams& sp = cfg.strategy;
+  sp.gamma = st["gamma"].value_or(sp.gamma);
+  sp.kappa = st["kappa"].value_or(sp.kappa);
+  sp.tau_days = st["tau_days"].value_or(sp.tau_days);
+  sp.sigma_halflife_s = st["sigma_halflife_s"].value_or(sp.sigma_halflife_s);
+  sp.sigma_min_samples = st["sigma_min_samples"].value_or(sp.sigma_min_samples);
+  sp.sigma_spike_threshold = st["sigma_spike_threshold"].value_or(sp.sigma_spike_threshold);
+  sp.hysteresis_ticks = st["hysteresis_ticks"].value_or(sp.hysteresis_ticks);
+  sp.q_max_lots = st["q_max_lots"].value_or(sp.q_max_lots);
+  sp.quote_size_lots = st["quote_size_lots"].value_or(sp.quote_size_lots);
+  sp.maker_fee_bps = st["maker_fee_bps"].value_or(sp.maker_fee_bps);
+  sp.min_notional_usdt = st["min_notional_usdt"].value_or(sp.min_notional_usdt);
+  sp.px_scale = md.px_scale;  // tick/step scales come from [market_data]
+  sp.qty_scale = md.qty_scale;
+
   if (!LoadDotenv(env_path)) {
     spdlog::warn(".env file '{}' not found; API keys unset (fine until Phase 5)", env_path);
   }

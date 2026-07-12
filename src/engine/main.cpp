@@ -9,7 +9,9 @@
 #include <ctime>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <memory>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -22,6 +24,7 @@
 #include "engine/replay.hpp"
 #include "exchange/rest_client.hpp"
 #include "exchange/ws_client.hpp"
+#include "strategy/strategy.hpp"
 #include "version.hpp"
 
 namespace {
@@ -95,9 +98,17 @@ int RunLive(const asmm::AppConfig& cfg, int seconds, bool do_log) {
     spdlog::info("event log: {}", path);
   }
 
+  std::unique_ptr<asmm::Strategy> strat;
+  if (cfg.strategy_enabled) {
+    strat = std::make_unique<asmm::Strategy>(cfg.strategy);
+    spdlog::info("strategy: gamma={} kappa={} tau={} q_max={} size={} (PAPER, no orders)",
+                 cfg.strategy.gamma, cfg.strategy.kappa, cfg.strategy.tau_days,
+                 cfg.strategy.q_max_lots, cfg.strategy.quote_size_lots);
+  }
+
   asmm::MarketDataThread md(*ws, *rest, params, *queue);
   asmm::Engine engine(*queue, cfg.market_data.stale_threshold_ms, cc_queue.get(),
-                      cfg.market_data.crosscheck_levels, log.get());
+                      cfg.market_data.crosscheck_levels, log.get(), strat.get());
 
   const std::string cc_target = "/api/v3/depth?symbol=" + cfg.symbol +
                                 "&limit=" + std::to_string(cfg.market_data.crosscheck_depth_limit);
@@ -145,6 +156,10 @@ int RunLive(const asmm::AppConfig& cfg, int seconds, bool do_log) {
         md.counters().ws_reconnects, engine.undetected_gaps(), engine.counters().stale_episodes,
         engine.counters().crosscheck_ok, engine.counters().crosscheck_fail,
         engine.counters().crosscheck_skipped);
+    if (strat) {
+      spdlog::info("  strategy q={} fills={} sigma_p_micro={}", engine.strat_inventory(),
+                   engine.strat_fills(), engine.strat_sigma_micro());
+    }
     if (deadline_ns != 0 && asmm::NowNs() >= deadline_ns) g_stop.store(true);
   }
 
@@ -177,18 +192,74 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  // Offline replay of a recorded log: --replay <log.bin>
-  if (arg == "--replay") {
-    if (argc < 3) {
+  // Convert a recorded depth jsonl to a binary event log: --jsonl-to-log <in> <out>
+  if (arg == "--jsonl-to-log") {
+    if (argc < 4) {
       PrintUsage(argv[0]);
       return 1;
     }
     try {
-      const auto decisions = asmm::ReplayLogFile(argv[2]);
+      const asmm::SymbolFilters filters{2, 5};  // BTCUSDT
+      std::vector<asmm::MarketEvent> events;
+      std::ifstream in(argv[2]);
+      std::string line;
+      while (std::getline(in, line)) {
+        if (!line.empty()) asmm::ParseDepthDiff(line, filters, 0, events);
+      }
+      asmm::WriteEventsToLog(argv[3], std::span<const asmm::MarketEvent>(events));
+      spdlog::info("wrote {} events to {}", events.size(), argv[3]);
+      return 0;
+    } catch (const std::exception& e) {
+      spdlog::error("jsonl-to-log error: {}", e.what());
+      return 1;
+    }
+  }
+
+  // Parse flags (shared across modes).
+  std::string config_path;
+  std::string replay_path;
+  int seconds = 0;
+  bool do_log = false;
+  double gamma_override = 0.0;
+  const bool run_mode = (arg == "--run");
+  const bool replay_mode = (arg == "--replay");
+  for (int i = 1; i < argc; ++i) {
+    const std::string a = argv[i];
+    if (a == "--config" && i + 1 < argc)
+      config_path = argv[++i];
+    else if (a == "--seconds" && i + 1 < argc)
+      seconds = std::atoi(argv[++i]);
+    else if (a == "--gamma" && i + 1 < argc)
+      gamma_override = std::atof(argv[++i]);
+    else if (a == "--log")
+      do_log = true;
+    else if (a == "--replay" && i + 1 < argc)
+      replay_path = argv[++i];
+  }
+
+  // Offline replay of a recorded log: --replay <log.bin> [--config <toml> [--gamma G]]
+  if (replay_mode) {
+    if (replay_path.empty()) {
+      PrintUsage(argv[0]);
+      return 1;
+    }
+    try {
+      const auto decisions = asmm::ReplayLogFile(replay_path);
       const auto& last = decisions.empty() ? asmm::DecisionRecord{} : decisions.back();
-      spdlog::info("replayed {} decisions from {}", decisions.size(), argv[2]);
-      spdlog::info("final: lastId={} bid={} ask={} mid_x2={} bids={} asks={}", last.final_update_id,
-                   last.best_bid_px, last.best_ask_px, last.mid_x2, last.num_bids, last.num_asks);
+      spdlog::info("replayed {} decisions from {}", decisions.size(), replay_path);
+      spdlog::info("book final: lastId={} bid={} ask={} mid_x2={}", last.final_update_id,
+                   last.best_bid_px, last.best_ask_px, last.mid_x2);
+      if (!config_path.empty()) {
+        asmm::AppConfig cfg = asmm::LoadConfig(config_path, ".env");
+        if (gamma_override > 0.0) cfg.strategy.gamma = gamma_override;
+        const auto s = asmm::ReplayStrategyFile(replay_path, cfg.strategy).summary;
+        spdlog::info(
+            "strategy gamma={}: quotes={} fills={} final_q={} max|q|={} mean_q={:.2f} "
+            "cross_viol={} one_sided={} pulled={} cash_units={}",
+            cfg.strategy.gamma, s.quotes, s.fills, s.final_inventory, s.max_abs_inventory,
+            s.mean_inventory, s.cross_violations, s.one_sided_ticks, s.pulled_ticks,
+            s.final_cash_units);
+      }
       return 0;
     } catch (const std::exception& e) {
       spdlog::error("replay error: {}", e.what());
@@ -196,27 +267,14 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Parse flags (shared by --config and --run).
-  std::string config_path;
-  int seconds = 0;
-  bool do_log = false;
-  const bool run_mode = (arg == "--run");
-  for (int i = 1; i < argc; ++i) {
-    const std::string a = argv[i];
-    if (a == "--config" && i + 1 < argc)
-      config_path = argv[++i];
-    else if (a == "--seconds" && i + 1 < argc)
-      seconds = std::atoi(argv[++i]);
-    else if (a == "--log")
-      do_log = true;
-  }
   if (config_path.empty()) {
     PrintUsage(argv[0]);
     return 1;
   }
 
   try {
-    const asmm::AppConfig cfg = asmm::LoadConfig(config_path, ".env");
+    asmm::AppConfig cfg = asmm::LoadConfig(config_path, ".env");
+    if (gamma_override > 0.0) cfg.strategy.gamma = gamma_override;
     if (run_mode) return RunLive(cfg, seconds, do_log);
     // --config: load-and-report (unchanged Phase 0 behavior).
     spdlog::info("loaded config: symbol={} rest_url={} ws_market_url={} log_dir={}", cfg.symbol,

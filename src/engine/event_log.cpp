@@ -16,7 +16,9 @@ EventLogWriter::EventLogWriter(const std::string& path) {
   LogHeader h{{'A', 'S', 'M', 'L'},
               kLogVersion,
               static_cast<u32>(sizeof(MarketEvent)),
-              static_cast<u32>(sizeof(DecisionRecord))};
+              static_cast<u32>(sizeof(DecisionRecord)),
+              static_cast<u32>(sizeof(QuoteRecord)),
+              static_cast<u32>(sizeof(FillRecord))};
   Append(&h, sizeof(h));
 }
 
@@ -42,6 +44,14 @@ void EventLogWriter::WriteMarketEvent(const MarketEvent& ev) {
 
 void EventLogWriter::WriteDecision(const DecisionRecord& d) {
   WriteRecord(kRecDecision, &d, sizeof(d));
+}
+
+void EventLogWriter::WriteQuote(const QuoteRecord& q) {
+  WriteRecord(kRecQuote, &q, sizeof(q));
+}
+
+void EventLogWriter::WriteFill(const FillRecord& f) {
+  WriteRecord(kRecFill, &f, sizeof(f));
 }
 
 void EventLogWriter::Flush() {
@@ -73,7 +83,8 @@ EventLogReader::EventLogReader(const std::string& path) {
     throw std::runtime_error("event log version mismatch: " + path);
   }
   // Cross-machine / build compatibility: struct sizes must match this binary.
-  if (h.market_event_size != sizeof(MarketEvent) || h.decision_size != sizeof(DecisionRecord)) {
+  if (h.market_event_size != sizeof(MarketEvent) || h.decision_size != sizeof(DecisionRecord) ||
+      h.quote_size != sizeof(QuoteRecord) || h.fill_size != sizeof(FillRecord)) {
     throw std::runtime_error("event log struct-size mismatch (incompatible build): " + path);
   }
 }

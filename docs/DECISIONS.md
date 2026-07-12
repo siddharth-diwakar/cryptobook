@@ -2,6 +2,47 @@
 
 Two-line entries per CLAUDE.md workflow rule. Newest first.
 
+## Phase 4
+
+- **Strategy is a pure lib (asmm_strategy) behind a null Engine pointer.** With no
+  strategy attached, Phase 0-3 behavior (incl. the DecisionRecord golden) is
+  byte-identical. The strategy reads ONLY the L2Book + recorded MarketEvent fields.
+
+- **sigma sampled on recorded ts_exchange_ms, never NowNs()** — replay-deterministic.
+  This consciously amends the Phase 3 "timestamps never enter decisions" rule to:
+  *recorded input timestamps may; NowNs() never may.* (events.hpp comment updated.)
+
+- **Strategy determinism stream = same-build two-run byte test, NOT a cross-arch
+  golden.** The quoter uses ln/exp, which aren't ULP-identical across arm64/x86_64,
+  so a boundary tick could flip. Phase 3's integer DecisionRecord golden stays the
+  cross-arch proof; the strategy gets a same-build byte-identity test instead.
+
+- **Fills-first tick order.** OnEvent simulates fills against resting quotes BEFORE
+  re-quoting — a just-placed post-only quote can't fill in the same event. (Caught
+  in review: re-quoting first would make fills impossible.)
+
+- **Post-only re-clamp AFTER hysteresis.** A held (hysteresis) price may now cross
+  the moved book; re-clamping prevents resting a marketable quote / phantom fills.
+  (Caught in adversarial code review.)
+
+- **Unit convention: sigma_p = mid·sigma_r·sqrt(86400) (ticks/√day), tau=1 day.**
+  Implemented per MODEL.md exactly. The documented consequence (usable gamma ~1e-9,
+  prescribed grid never fills) is the honest sweep finding, not a bug — see
+  docs/GAMMA_SWEEP.md. Live paper run uses gamma=1e-9.
+
+- **Integer-only paper cash/fees.** Cash in units of 10^-(px+qty scale) USDT so
+  px_ticks*qty_lots is exact; maker fee rounded up (against us). i64 is safe (would
+  need ~1e11 same-direction fills to overflow).
+
+- **Event log bumped to v2** (kRecQuote/kRecFill + header struct sizes). Old v1 logs
+  are unreadable; acceptable — replay_golden.dat is raw DecisionRecord bytes, not a
+  log file, so Phase 3's cross-arch test is unaffected.
+
+- **Live status uses engine-published atomic snapshots** for strategy inventory/
+  fills/sigma. Reading the strategy object's plain members from the status thread
+  raced (compiler-cached stale reads showed 0); the engine thread publishes to
+  relaxed atomics instead. Display-only — not read by strategy logic.
+
 ## Phase 3
 
 - **DecisionRecord is integer-only (no microprice/doubles).** Floating point is not

@@ -70,7 +70,7 @@ docs/          # SPEC, ARCHITECTURE, MODEL, ROADMAP — read these first
 - [x] Phase 1 — L2 book reconstruction from WS deltas
 - [~] Phase 2 — gap detection, snapshot resync, book checksum vs REST (code complete + live smoke-tested; 24h acceptance run pending)
 - [x] Phase 3 — event log + replay harness (byte-identical determinism; golden cross-machine test in CI)
-- [ ] Phase 4 — Avellaneda-Stoikov quoting (paper, no orders yet)
+- [~] Phase 4 — Avellaneda-Stoikov quoting (paper) — model tests + γ sweep done, live-smoke-tested; 48h paper run pending
 - [ ] Phase 5 — testnet order placement, fills, inventory tracking
 - [ ] Phase 6 — risk limits, kill switch, 2-week live run
 - [ ] Phase 7 — analysis, plots, README results section

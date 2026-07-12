@@ -35,6 +35,16 @@ if(_beast_inc)
   target_include_directories(asmm_net SYSTEM PRIVATE ${_beast_inc})
 endif()
 
+# --- asmm_strategy: pure Avellaneda-Stoikov strategy logic (no I/O). Depends only
+# on asmm_core.
+add_library(asmm_strategy STATIC
+  strategy/as_quoter.cpp
+  strategy/sigma_ewma.cpp
+  strategy/paper_fills.cpp
+  strategy/strategy.cpp)
+target_include_directories(asmm_strategy PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(asmm_strategy PUBLIC asmm_core PRIVATE asmm_warnings)
+
 # --- asmm_engine: pure engine logic (no direct network I/O; network arrives via
 # transport interfaces). Testable in CI without OpenSSL/Beast.
 add_library(asmm_engine STATIC
@@ -47,7 +57,7 @@ add_library(asmm_engine STATIC
   engine/engine.cpp)
 target_include_directories(asmm_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(asmm_engine
-  PUBLIC asmm_core asmm_exchange
+  PUBLIC asmm_core asmm_exchange asmm_strategy
   PRIVATE asmm_warnings spdlog::spdlog)
 
 # --- asmm: the application binary.

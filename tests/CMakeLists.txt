@@ -10,6 +10,10 @@ add_executable(asmm_tests
   test_crosscheck.cpp
   test_event_log.cpp
   test_replay.cpp
+  test_as_quoter.cpp
+  test_sigma_ewma.cpp
+  test_strategy.cpp
+  test_strategy_replay.cpp
   test_market_data_thread.cpp
   ${CMAKE_SOURCE_DIR}/src/engine/config.cpp)
 

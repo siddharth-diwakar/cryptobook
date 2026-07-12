@@ -47,9 +47,11 @@ and the exact equations implemented: [docs/MODEL.md](docs/MODEL.md).
 cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 ctest --test-dir build --output-on-failure          # unit + replay tests
 ./build/asmm --version                              # version + git sha
-./build/asmm --run --config config/testnet.toml --log  # live book + resync, writing a replayable log
+./build/asmm --run --config config/testnet.toml --log  # live book + resync + A-S paper strategy
 ./build/asmm --replay logs/events-*.bin             # deterministic offline replay (Phase 3)
-python analysis/verify_24h.py run.log               # verify a 24h run's acceptance
+scripts/gamma_sweep.sh                              # A-S gamma sweep -> docs/GAMMA_SWEEP.md (Phase 4)
+python analysis/paper_report.py logs/events-*.bin   # paper-run inventory/PnL/fills report
+python analysis/verify_24h.py run.log               # verify a 24h market-data run's acceptance
 ```
 Linux needs `libssl-dev` (CI installs it). Benchmarks: `bench/run_bench.sh`.
 

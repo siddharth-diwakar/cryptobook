@@ -18,11 +18,12 @@ constexpr i64 kLogFlushNs = 5'000'000'000;  // 5s
 }  // namespace
 
 Engine::Engine(MarketQueue& in, i64 stale_threshold_ms, CrossCheckQueue* cc_in,
-               int crosscheck_levels, EventLogWriter* log)
+               int crosscheck_levels, EventLogWriter* log, Strategy* strat)
     : in_(in),
       cc_in_(cc_in),
       crosscheck_levels_(crosscheck_levels),
       log_(log),
+      strat_(strat),
       stale_threshold_ns_(stale_threshold_ms * 1'000'000) {
   ring_.reserve(kRingCap);
 }
@@ -46,6 +47,7 @@ bool Engine::Drain() {
       ring_.clear();  // a resync invalidates the replay history
       ++counters_.snapshots_applied;
       book_live_ = false;
+      if (strat_) strat_->OnResync();
     }
     book_.ApplyEvent(ev);
     RecordRing(ev);
@@ -56,6 +58,20 @@ bool Engine::Drain() {
     if (log_) {
       log_->WriteMarketEvent(ev);
       log_->WriteDecision(MakeDecision(book_, ev.final_update_id, book_live_, !ok));
+    }
+
+    // Strategy tick — same order as ReplayStrategy, so live == replay.
+    if (strat_ && book_live_ && !(ev.flags & kFlagContinuation)) {
+      const StrategyOutput o = strat_->OnEvent(book_, ev);
+      if (log_) {
+        if (o.has_quote) log_->WriteQuote(o.quote);
+        for (const auto& f : o.fills) log_->WriteFill(f);
+      }
+      if (o.has_quote) {
+        strat_inv_.store(o.quote.inventory_lots, std::memory_order_relaxed);
+        strat_sigma_micro_.store(o.quote.sigma_p_micro, std::memory_order_relaxed);
+      }
+      strat_fills_.store(strat_->fill_count(), std::memory_order_relaxed);
     }
   }
   return did_work;

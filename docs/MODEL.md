@@ -33,6 +33,14 @@ Quotes (before rounding/clamping):
 - **σ**: EWMA std of 1s mid log-returns, annualization-free (keep units
   consistent with τ; write the unit convention here once chosen — unit bugs
   are the #1 way this model silently misbehaves).
+
+  **Unit convention (chosen in Phase 4):** time unit = 1 day, so `τ = 1.0`.
+  `SigmaEwma` outputs `σ_r` = relative log-return vol **per √second** (sampled on
+  the recorded `ts_exchange_ms`, so replay-deterministic). The quoter converts to
+  **absolute price vol in ticks per √day**: `σ_p = mid_ticks · σ_r · √86400`, then
+  the equations run in tick units (s in ticks, q in base units). Consequence at BTC
+  scale: σ_p ≈ 36,000 ticks so σ_p² ≈ 1.3e9, collapsing the usable γ to ~1e-9 — the
+  prescribed grid {0.01,0.1,1.0} never fills. See docs/GAMMA_SWEEP.md.
 - **κ**: estimate from our own fill data once live: fit λ(δ) = A·exp(−κδ)
   to (quote distance, fill intensity). Until enough fills: κ = 1.5 as a
   documented placeholder.

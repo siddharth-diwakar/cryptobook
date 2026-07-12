@@ -7,6 +7,7 @@
 
 #include "core/events.hpp"
 #include "core/types.hpp"
+#include "strategy/records.hpp"
 
 namespace asmm {
 
@@ -29,7 +30,7 @@ struct DecisionRecord {
 static_assert(sizeof(DecisionRecord) == 64);
 static_assert(std::is_trivially_copyable_v<DecisionRecord>);
 
-enum RecordType : u32 { kRecMarketEvent = 1, kRecDecision = 2 };
+enum RecordType : u32 { kRecMarketEvent = 1, kRecDecision = 2, kRecQuote = 3, kRecFill = 4 };
 
 // Per-record framing: 8 bytes, little-endian.
 struct RecordHeader {
@@ -45,10 +46,12 @@ struct LogHeader {
   u32 version;
   u32 market_event_size;
   u32 decision_size;
+  u32 quote_size;
+  u32 fill_size;
 };
-static_assert(sizeof(LogHeader) == 16);
+static_assert(sizeof(LogHeader) == 24);
 
-inline constexpr u32 kLogVersion = 1;
+inline constexpr u32 kLogVersion = 2;
 
 // Append-only binary log writer. Buffered; flush on timer/close. Not thread-safe
 // — the single engine thread owns it.
@@ -62,6 +65,8 @@ class EventLogWriter {
 
   void WriteMarketEvent(const MarketEvent& ev);
   void WriteDecision(const DecisionRecord& d);
+  void WriteQuote(const QuoteRecord& q);
+  void WriteFill(const FillRecord& f);
   void Flush();  // write buffer to disk + fflush
   void Close();
 

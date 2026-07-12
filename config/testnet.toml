@@ -30,6 +30,17 @@ crosscheck_interval_s = 60
 crosscheck_depth_limit = 100
 crosscheck_levels = 20
 
-# Strategy parameters (gamma, kappa, tau, sigma window, hysteresis) arrive in
-# Phase 4 per docs/MODEL.md. Placeholder section for now.
+# Avellaneda-Stoikov strategy (paper mode; docs/MODEL.md). No orders are sent.
 [strategy]
+enabled = true
+gamma = 1e-9   # placeholder; the usable range is tiny at BTC price scale (see docs/GAMMA_SWEEP.md)
+kappa = 1.5    # documented placeholder until fit from fills (Phase 5+)
+tau_days = 1.0
+sigma_halflife_s = 60.0
+sigma_min_samples = 30
+sigma_spike_threshold = 5e-4  # per-sqrt-second relative vol -> pull quotes
+hysteresis_ticks = 2
+q_max_lots = 100        # 0.001 BTC soft limit -> quote one side only
+quote_size_lots = 10    # 0.0001 BTC per side
+maker_fee_bps = 10.0    # Binance spot 0.1%
+min_notional_usdt = 5.0

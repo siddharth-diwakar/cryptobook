@@ -3,6 +3,7 @@
 #include <string>
 
 #include "core/types.hpp"
+#include "strategy/params.hpp"
 
 namespace asmm {
 
@@ -37,6 +38,10 @@ struct AppConfig {
 
   // [market_data]
   MarketDataConfig market_data;
+
+  // [strategy]
+  bool strategy_enabled = false;
+  StrategyParams strategy;
 
   // Secrets from .env (never logged). Empty until Phase 5 needs them.
   std::string api_key;

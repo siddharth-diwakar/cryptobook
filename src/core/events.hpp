@@ -28,7 +28,8 @@ inline constexpr u8 kFlagSnapshotStart =
 struct MarketEvent {
   u64 seq;              // local monotonic ingest sequence (producer-assigned)
   i64 ts_recv_ns;       // steady_clock at parse time
-  i64 ts_exchange_ms;   // Binance "E" wall-clock ms — logging/analysis only, never logic
+  i64 ts_exchange_ms;   // Binance "E" wall-clock ms — a RECORDED field, so replay-safe
+                        // for deterministic time sampling (e.g. sigma). Never NowNs().
   u64 first_update_id;  // Binance "U"
   u64 final_update_id;  // Binance "u"
   u64 prev_update_id;   // Binance "pu" (futures only; 0 on spot, reserved)
